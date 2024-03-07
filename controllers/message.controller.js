@@ -1,9 +1,12 @@
 const Conversation = require('../models/conversation.model');
 const Message = require('../models/message.model');
+const { io, getReceiverSocketId } = require('../socket/socket');
 const sendMessage = async (req, res) => {
     try {
+        console.log('Sending message...');
         const { message } = req.body;
         const { id: receiverId } = req.params;
+        console.log(`Receiver id:`, receiverId);
         console.log("User id: ", req.user._id);
         const senderId = req.user._id;
         let conversation = await Conversation.findOne({
@@ -24,8 +27,15 @@ const sendMessage = async (req, res) => {
         if (newMessage) {
             conversation.messages.push(newMessage._id)
         }
+
+
         await Promise.all([conversation.save(), newMessage.save()]);
-        res.status(201).json(newMessage);
+
+        const receiverSocketId = getReceiverSocketId(receiverId);
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit('newMessage', newMessage);
+        }
+        res.status(201).json({ message: "Message sent successfully!", newMessage });
     }
     catch (error) {
         console.log("Error in sendMessage Controller", error);
@@ -35,9 +45,13 @@ const sendMessage = async (req, res) => {
 
 const getMessage = async (req, res) => {
     try {
+        // console.log('Getting message');
         const { id: userToChatId } = req.params;
         const senderId = req.user._id;
-        console.log(userToChatId, senderId);
+
+        // console.log(`Receiver id:`, userToChatId);
+        // console.log("User id: ", req.user._id);
+        // console.log(userToChatId, senderId);
         const conversation = await Conversation.findOne({
             participants: { $all: [senderId, userToChatId] }
         }).populate("messages");
@@ -45,6 +59,7 @@ const getMessage = async (req, res) => {
             console.log("No conversation");
             return res.status(200).json([]);
         }
+        // console.log("Messages : ", conversation.messages);
         res.status(200).json(conversation.messages);
 
     }
